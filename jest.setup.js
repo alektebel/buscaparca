@@ -74,11 +74,20 @@ jest.mock('react-native-maps', () => {
   return MockMapView;
 });
 
-// Mock react-native-reanimated
+// Mock react-native-reanimated (with error handling)
 jest.mock('react-native-reanimated', () => {
-  const Reanimated = require('react-native-reanimated/mock');
-  Reanimated.default.call = () => {};
-  return Reanimated;
+  try {
+    const Reanimated = require('react-native-reanimated/mock');
+    Reanimated.default.call = () => {};
+    return Reanimated;
+  } catch (error) {
+    // Fallback if reanimated mock is not available
+    return {
+      default: {
+        call: () => {},
+      },
+    };
+  }
 });
 
 // Mock safe area context
