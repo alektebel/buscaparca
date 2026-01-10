@@ -51,3 +51,6 @@ logs
 *.aab
 android/app/build/
 ios/build/
+
+# Test coverage
+coverage/
