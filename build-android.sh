@@ -1,115 +1,44 @@
 #!/bin/bash
-
-# BuscaParca EAS Build Script
-# Automates the Android APK build process
+# BuscaParca Native Android Build Script
+# This script uses the portable JDK 17 installed in ~/.local/jdk
 
 set -e
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+JAVA_HOME_PATH="$HOME/.local/jdk/jdk-17.0.13+11"
 
-clear
+if [ ! -d "$JAVA_HOME_PATH" ]; then
+    echo "❌ Error: JDK 17 not found at $JAVA_HOME_PATH"
+    echo "Please ensure the portable JDK is installed"
+    exit 1
+fi
 
-echo "=================================="
-echo "   🚗 BuscaParca APK Builder"
-echo "=================================="
-echo ""
-echo -e "${BLUE}This will build a professional Android APK using Expo EAS${NC}"
-echo ""
+echo "✓ Using JDK at: $JAVA_HOME_PATH"
 
-# Check if logged in
-echo -e "${YELLOW}Checking EAS login status...${NC}"
-if npx eas-cli whoami > /dev/null 2>&1; then
-    USERNAME=$(npx eas-cli whoami)
-    echo -e "${GREEN}✓ Already logged in as: $USERNAME${NC}"
-    echo ""
-    read -p "Continue with this account? (y/n): " continue_choice
-    if [[ ! $continue_choice =~ ^[Yy]$ ]]; then
-        echo "Logging out..."
-        npx eas-cli logout
-        echo "Please run this script again to login with different account"
-        exit 0
-    fi
+cd "$(dirname "$0")/android-app"
+
+export JAVA_HOME="$JAVA_HOME_PATH"
+
+# Run the command passed as arguments, or default to assembleDebug
+if [ $# -eq 0 ]; then
+    echo "Running: ./gradlew assembleDebug"
+    ./gradlew assembleDebug --no-configuration-cache
 else
-    echo -e "${YELLOW}⚠ Not logged in to EAS${NC}"
-    echo ""
-    echo "You need an Expo account to build. It's FREE!"
-    echo ""
-    echo "Options:"
-    echo "1. I have an Expo account - Let me login"
-    echo "2. I need to create an account first"
-    echo ""
-    read -p "Choose (1 or 2): " account_choice
-    
-    if [ "$account_choice" = "2" ]; then
-        echo ""
-        echo -e "${BLUE}Creating an Expo account:${NC}"
-        echo "1. Go to: https://expo.dev/signup"
-        echo "2. Sign up with your email"
-        echo "3. Verify your email"
-        echo "4. Come back and run this script again"
-        echo ""
-        read -p "Press Enter to open signup page..."
-        xdg-open "https://expo.dev/signup" 2>/dev/null || open "https://expo.dev/signup" 2>/dev/null || echo "Open https://expo.dev/signup in your browser"
-        exit 0
-    fi
-    
-    echo ""
-    echo -e "${BLUE}Logging in to Expo...${NC}"
-    npx eas-cli login
-    
-    if npx eas-cli whoami > /dev/null 2>&1; then
-        USERNAME=$(npx eas-cli whoami)
-        echo -e "${GREEN}✓ Successfully logged in as: $USERNAME${NC}"
-    else
-        echo -e "${RED}✗ Login failed${NC}"
-        exit 1
-    fi
+    echo "Running: ./gradlew $@"
+    ./gradlew "$@" --no-configuration-cache
 fi
 
 echo ""
-echo "=================================="
-echo "   Starting Build"
-echo "=================================="
-echo ""
-echo -e "${YELLOW}Build profile:${NC} preview (APK format)"
-echo -e "${YELLOW}Platform:${NC} Android"
-echo -e "${YELLOW}Estimated time:${NC} 15-20 minutes"
-echo ""
-echo "The build will happen in the cloud. You can:"
-echo "- Close this terminal (build continues)"
-echo "- Watch progress at: https://expo.dev"
-echo "- Get a notification when done"
-echo ""
-read -p "Press Enter to start the build..."
-
-echo ""
-echo -e "${GREEN}🚀 Starting build...${NC}"
+echo "✓ Build completed successfully!"
 echo ""
 
-# Start the build
-npx eas-cli build --platform android --profile preview
-
-echo ""
-echo "=================================="
-echo -e "${GREEN}✓ Build submitted!${NC}"
-echo "=================================="
-echo ""
-echo "What happens next:"
-echo "1. ⏱️  Wait 15-20 minutes for build to complete"
-echo "2. 📥 Download the APK from the link above"
-echo "3. 📲 Transfer APK to your Android phone"
-echo "4. 📱 Install and run!"
-echo ""
-echo "To check build status:"
-echo "  npx eas-cli build:list"
-echo ""
-echo "To view builds online:"
-echo "  https://expo.dev/accounts/$USERNAME/projects/buscaparca/builds"
-echo ""
-echo -e "${BLUE}Tip: You'll get an email when the build is ready!${NC}"
-echo ""
+# If assembleDebug was run, show APK location
+if [ $# -eq 0 ] || [[ " $@ " =~ " assembleDebug " ]]; then
+    APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+    if [ -f "$APK_PATH" ]; then
+        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+        echo "📦 APK created: $APK_PATH ($APK_SIZE)"
+        echo ""
+        echo "To install on a connected device:"
+        echo "  adb install $APK_PATH"
+    fi
+fi

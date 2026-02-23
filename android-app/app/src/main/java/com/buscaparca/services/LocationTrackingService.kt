@@ -72,16 +72,16 @@ class LocationTrackingService : Service() {
     private fun handleNewLocation(location: Location) {
         serviceScope.launch {
             try {
-                val userId = preferencesManager.getUserId() ?: "anonymous"
+                val userId = preferencesManager.getUserId()?.toString() ?: "anonymous"
                 
                 val trajectory = Trajectory(
                     userId = userId,
                     latitude = location.latitude,
                     longitude = location.longitude,
                     timestamp = System.currentTimeMillis(),
-                    speed = if (location.hasSpeed()) location.speed else null,
-                    heading = if (location.hasBearing()) location.bearing else null,
-                    accuracy = if (location.hasAccuracy()) location.accuracy else null
+                    speed = if (location.hasSpeed()) location.speed.toFloat() else null,
+                    heading = if (location.hasBearing()) location.bearing.toFloat() else null,
+                    accuracy = if (location.hasAccuracy()) location.accuracy.toFloat() else null
                 )
                 
                 // Save locally
@@ -94,9 +94,9 @@ class LocationTrackingService : Service() {
                         latitude = location.latitude,
                         longitude = location.longitude,
                         timestamp = System.currentTimeMillis(),
-                        speed = if (location.hasSpeed()) location.speed else null,
-                        heading = if (location.hasBearing()) location.bearing else null,
-                        accuracy = if (location.hasAccuracy()) location.accuracy else null
+                        speed = if (location.hasSpeed()) location.speed.toFloat() else null,
+                        heading = if (location.hasBearing()) location.bearing.toFloat() else null,
+                        accuracy = if (location.hasAccuracy()) location.accuracy.toFloat() else null
                     )
                     ApiClient.buscaParcaApi.sendTrajectory(request)
                 } catch (e: Exception) {

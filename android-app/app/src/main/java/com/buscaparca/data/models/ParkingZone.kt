@@ -27,9 +27,9 @@ data class ParkingZone(
     
     fun getHotZoneColor(): Int {
         return when {
-            successRate >= 0.7 -> 0x8000FF00 // Green with transparency
-            successRate >= 0.4 -> 0x80FFFF00 // Yellow with transparency
-            else -> 0x80FF0000 // Red with transparency
+            successRate >= 0.7 -> 0x8000FF00.toInt() // Green with transparency
+            successRate >= 0.4 -> 0x80FFFF00.toInt() // Yellow with transparency
+            else -> 0x80FF0000.toInt() // Red with transparency
         }
     }
 }

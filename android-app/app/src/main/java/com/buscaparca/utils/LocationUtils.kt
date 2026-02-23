@@ -1,6 +1,7 @@
 package com.buscaparca.utils
 
 import com.google.android.gms.maps.model.LatLng
+import java.util.Locale
 import kotlin.math.*
 
 object LocationUtils {
@@ -59,7 +60,7 @@ object LocationUtils {
     fun formatDistance(meters: Double): String {
         return when {
             meters < 1000 -> "${meters.toInt()} m"
-            else -> String.format("%.1f km", meters / 1000)
+            else -> String.format(Locale.US, "%.1f km", meters / 1000)
         }
     }
     

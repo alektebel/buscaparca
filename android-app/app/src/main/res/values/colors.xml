@@ -17,4 +17,7 @@
     <color name="hot_zone_green">#8000FF00</color>
     <color name="hot_zone_yellow">#80FFFF00</color>
     <color name="hot_zone_red">#80FF0000</color>
+    
+    <!-- Icon Background -->
+    <color name="iconBackground">#FFFFFF</color>
 </resources>
