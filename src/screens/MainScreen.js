@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 import MapView, { Marker, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { AuthService } from '../services/AuthService';
-import { ParkingService } from '../services/ParkingService';
+import { ApiService } from '../services/ApiService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -23,11 +23,40 @@ export default function MainScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [mapRegion, setMapRegion] = useState(null);
+  const [hotZones, setHotZones] = useState([]);
+  const [nearbyParkingZones, setNearbyParkingZones] = useState([]);
+  const [hasDemoData, setHasDemoData] = useState(false);
+  const [serverConnected, setServerConnected] = useState(false);
+  const locationWatchRef = useRef(null);
+  const trajectoryIntervalRef = useRef(null);
 
   useEffect(() => {
     loadUser();
+    testServerConnection();
     requestLocationPermission();
+    
+    // Cleanup on unmount
+    return () => {
+      if (locationWatchRef.current) {
+        locationWatchRef.current.remove();
+      }
+      if (trajectoryIntervalRef.current) {
+        clearInterval(trajectoryIntervalRef.current);
+      }
+    };
   }, []);
+
+  const testServerConnection = async () => {
+    const connected = await ApiService.testConnection();
+    setServerConnected(connected);
+    if (!connected) {
+      Alert.alert(
+        'Servidor No Disponible',
+        'No se pudo conectar al servidor. Asegúrate de que el servidor esté ejecutándose en tu computadora.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   const loadUser = async () => {
     const result = await AuthService.checkSession();
@@ -71,6 +100,12 @@ export default function MainScreen({ navigation }) {
         longitudeDelta: 0.01,
       });
 
+      // Load hot zones for this area
+      await loadHotZones(userLocation.latitude, userLocation.longitude);
+
+      // Start tracking user trajectory
+      startTrajectoryTracking();
+
       setLoading(false);
     } catch (error) {
       setLoading(false);
@@ -79,17 +114,115 @@ export default function MainScreen({ navigation }) {
     }
   };
 
+  const loadHotZones = async (lat, lon) => {
+    if (!serverConnected) {
+      console.log('Server not connected, skipping hot zones');
+      return;
+    }
+
+    try {
+      const zones = await ApiService.getHotZones(lat, lon, 2);
+      setHotZones(zones);
+      setHasDemoData(zones.length > 0);
+      
+      // Also get nearby parking zones for markers
+      const nearbyZones = zones
+        .filter(zone => zone.successRate > 0.5)
+        .slice(0, 10)
+        .map((zone, index) => ({
+          id: `zone_${index}`,
+          ...zone,
+          name: `Zona ${index + 1}`,
+          probability: Math.round(zone.successRate * 100)
+        }));
+      
+      setNearbyParkingZones(nearbyZones);
+    } catch (error) {
+      console.error('Error loading hot zones:', error);
+    }
+  };
+
+  const handleSeedDemoData = async () => {
+    if (!location) {
+      Alert.alert('Error', 'Esperando ubicación...');
+      return;
+    }
+
+    if (!serverConnected) {
+      Alert.alert('Error', 'El servidor no está disponible');
+      return;
+    }
+
+    Alert.alert(
+      'Cargar Datos Demo',
+      '¿Deseas cargar datos de ejemplo en el servidor para visualizar zonas calientes? Esto creará eventos de estacionamiento simulados.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cargar',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await ApiService.seedDemoData(location.latitude, location.longitude, user?.username || 'demo');
+              await loadHotZones(location.latitude, location.longitude);
+              Alert.alert('Éxito', 'Datos de demostración cargados en el servidor. ¡Ahora puedes ver las zonas calientes en el mapa!');
+            } catch (error) {
+              Alert.alert('Error', 'No se pudieron cargar los datos demo');
+              console.error('Error seeding demo data:', error);
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const startTrajectoryTracking = () => {
+    if (!serverConnected) {
+      console.log('Server not connected, skipping trajectory tracking');
+      return;
+    }
+
+    // Record trajectory every 30 seconds
+    trajectoryIntervalRef.current = setInterval(async () => {
+      if (location && user) {
+        try {
+          const currentPos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          
+          await ApiService.recordTrajectory(user.username, {
+            latitude: currentPos.coords.latitude,
+            longitude: currentPos.coords.longitude,
+            speed: currentPos.coords.speed,
+            heading: currentPos.coords.heading,
+            accuracy: currentPos.coords.accuracy
+          });
+        } catch (error) {
+          console.error('Error recording trajectory:', error);
+        }
+      }
+    }, 30000); // 30 seconds
+  };
+
   const handleFindParking = async () => {
     if (!location) {
       Alert.alert('Error', 'Obteniendo ubicación...');
       return;
     }
 
-    setSearching(true);
+    if (!serverConnected) {
+      Alert.alert('Error', 'El servidor no está disponible');
+      return;
+    }
 
-    // Simulate search delay
-    setTimeout(() => {
-      const parking = ParkingService.getBestParkingOption(location);
+    setSearching(true);
+    const searchStartTime = Date.now();
+
+    try {
+      const result = await ApiService.findParking(location.latitude, location.longitude, 1000);
+      const parking = result.bestOption;
       
       if (parking) {
         setBestParking(parking);
@@ -108,14 +241,44 @@ export default function MainScreen({ navigation }) {
           `Distancia: ${parking.distance}m\n` +
           `Tipo: ${parking.type}\n` +
           `Probabilidad: ${parking.probability}%`,
-          [{ text: 'OK' }]
+          [
+            { 
+              text: 'No encontré lugar', 
+              style: 'cancel',
+              onPress: () => {
+                const searchDuration = Math.floor((Date.now() - searchStartTime) / 1000);
+                ApiService.recordParkingEvent(
+                  user?.username || 'guest',
+                  { latitude: parking.latitude, longitude: parking.longitude },
+                  false,
+                  searchDuration
+                );
+              }
+            },
+            { 
+              text: 'Estacioné aquí',
+              onPress: () => {
+                const searchDuration = Math.floor((Date.now() - searchStartTime) / 1000);
+                ApiService.recordParkingEvent(
+                  user?.username || 'guest',
+                  { latitude: parking.latitude, longitude: parking.longitude },
+                  true,
+                  searchDuration
+                );
+                Alert.alert('¡Genial!', 'Tu experiencia ayudará a mejorar las predicciones');
+              }
+            }
+          ]
         );
       } else {
-        Alert.alert('Lo sentimos', 'No se encontraron estacionamientos cercanos');
+        Alert.alert('Lo sentimos', 'No se encontraron estacionamientos cercanos. Intenta cargar datos demo primero.');
       }
-
+    } catch (error) {
+      console.error('Error finding parking:', error);
+      Alert.alert('Error', 'Hubo un problema al buscar estacionamiento');
+    } finally {
       setSearching(false);
-    }, 1500);
+    }
   };
 
   const handleLogout = async () => {
@@ -142,10 +305,23 @@ export default function MainScreen({ navigation }) {
         <View>
           <Text style={styles.welcomeText}>Bienvenido</Text>
           <Text style={styles.userText}>{user?.username || 'Usuario'}</Text>
+          <View style={styles.serverStatus}>
+            <View style={[styles.statusDot, serverConnected ? styles.statusConnected : styles.statusDisconnected]} />
+            <Text style={styles.statusText}>
+              {serverConnected ? 'Servidor conectado' : 'Servidor desconectado'}
+            </Text>
+          </View>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Salir</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          {!hasDemoData && !loading && serverConnected && (
+            <TouchableOpacity style={styles.demoButton} onPress={handleSeedDemoData}>
+              <Text style={styles.demoButtonText}>Demo</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Salir</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.mapContainer}>
@@ -170,6 +346,45 @@ export default function MainScreen({ navigation }) {
                 strokeWidth={2}
               />
             )}
+            
+            {/* Hot zones visualization */}
+            {hotZones.map((zone, index) => {
+              // Color based on success rate (green = good, yellow = medium, red = poor)
+              let color = 'rgba(255, 193, 7, 0.3)'; // yellow
+              if (zone.successRate > 0.7) {
+                color = 'rgba(76, 175, 80, 0.4)'; // green
+              } else if (zone.successRate < 0.4) {
+                color = 'rgba(244, 67, 54, 0.3)'; // red
+              }
+
+              return (
+                <Circle
+                  key={`hotzone_${index}`}
+                  center={{
+                    latitude: zone.latitude,
+                    longitude: zone.longitude
+                  }}
+                  radius={zone.radius}
+                  fillColor={color}
+                  strokeColor={color.replace('0.3', '0.6').replace('0.4', '0.7')}
+                  strokeWidth={1}
+                />
+              );
+            })}
+
+            {/* Nearby parking zone markers */}
+            {nearbyParkingZones.map((zone) => (
+              <Marker
+                key={zone.id}
+                coordinate={{
+                  latitude: zone.latitude,
+                  longitude: zone.longitude,
+                }}
+                title={zone.name}
+                description={`Probabilidad: ${zone.probability}%`}
+                pinColor={zone.successRate > 0.7 ? '#4CAF50' : '#FFC107'}
+              />
+            ))}
             
             {bestParking && (
               <Marker
@@ -226,6 +441,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  demoButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 5,
+    backgroundColor: '#4CAF50',
+  },
+  demoButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   welcomeText: {
     fontSize: 14,
     color: '#666',
@@ -234,6 +464,27 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+  },
+  serverStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  statusConnected: {
+    backgroundColor: '#4CAF50',
+  },
+  statusDisconnected: {
+    backgroundColor: '#f44336',
+  },
+  statusText: {
+    fontSize: 11,
+    color: '#666',
   },
   logoutButton: {
     paddingHorizontal: 15,

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BuscaParca</string>
+    <string name="google_maps_key">YOUR_API_KEY_HERE</string>
+    
+    <!-- Login/Register -->
+    <string name="login_title">Welcome Back</string>
+    <string name="register_title">Create Account</string>
+    <string name="email_hint">Email or Username</string>
+    <string name="password_hint">Password</string>
+    <string name="username_hint">Username</string>
+    <string name="confirm_password_hint">Confirm Password</string>
+    <string name="login_button">LOGIN</string>
+    <string name="register_button">REGISTER</string>
+    <string name="create_account_button">CREATE ACCOUNT</string>
+    <string name="back_to_login">BACK TO LOGIN</string>
+    
+    <!-- Main Screen -->
+    <string name="find_parking">FIND PARKING</string>
+    <string name="parked_here">PARKED HERE</string>
+    <string name="no_parking">NO PARKING</string>
+    <string name="stop_navigation">STOP NAVIGATION</string>
+    <string name="parking_probability">Parking Probability</string>
+    <string name="distance">Distance</string>
+    <string name="estimated_time">Est. Time</string>
+    <string name="best_parking_spot">Best Parking Spot</string>
+    <string name="navigate_here">Navigate Here</string>
+    
+    <!-- Messages -->
+    <string name="location_permission_required">Location permission required</string>
+    <string name="thank_you_feedback">Thank you for your feedback!</string>
+    <string name="looking_for_options">Looking for other options…</string>
+    <string name="no_parking_found">No parking spots found nearby</string>
+    <string name="error_loading_zones">Failed to load parking zones</string>
+    <string name="tracking_location">Tracking your location to find parking</string>
+    
+    <!-- Errors -->
+    <string name="fill_all_fields">Please fill all fields</string>
+    <string name="passwords_dont_match">Passwords don\'t match</string>
+    <string name="invalid_email">Invalid email address</string>
+    <string name="username_too_short">Username must be at least 3 characters</string>
+    <string name="password_too_short">Password must be at least 6 characters</string>
+</resources>

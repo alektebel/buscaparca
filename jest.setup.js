@@ -97,6 +97,16 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
+// Mock expo-sqlite
+jest.mock('expo-sqlite', () => ({
+  openDatabaseAsync: jest.fn(() => Promise.resolve({
+    execAsync: jest.fn(() => Promise.resolve()),
+    runAsync: jest.fn(() => Promise.resolve()),
+    getAllAsync: jest.fn(() => Promise.resolve([])),
+    getFirstAsync: jest.fn(() => Promise.resolve({ count: 0 }))
+  }))
+}));
+
 // Silence console warnings during tests
 const originalConsole = global.console;
 global.console = {

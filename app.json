@@ -27,13 +27,17 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.buscaparca.app",
+      "versionCode": 1,
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "INTERNET",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+          "apiKey": "AIzaSyDummy_Key_For_Build_Replace_Later"
         }
       }
     },
@@ -47,6 +51,11 @@
           "locationAlwaysAndWhenInUsePermission": "Allow BuscaParca to use your location to find parking nearby."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "22899eed-f432-43e9-affc-b8275930752e"
+      }
+    }
   }
 }
