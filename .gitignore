@@ -54,3 +54,6 @@ ios/build/
 
 # Test coverage
 coverage/
+*.apk
+*.db
+server.log
