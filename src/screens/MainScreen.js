@@ -6,62 +6,52 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Dimensions,
-  SafeAreaView
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
+import MapView, { Circle, Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { AuthService } from '../services/AuthService';
-import { ApiService } from '../services/ApiService';
-
-const { width, height } = Dimensions.get('window');
+import { ParkingService } from '../services/ParkingService';
+import ParkingMLModel from '../services/ParkingMLModel';
+import DatabaseService from '../services/DatabaseService';
+import { seedDemoData } from '../services/SeedService';
 
 export default function MainScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [location, setLocation] = useState(null);
-  const [bestParking, setBestParking] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [mapRegion, setMapRegion] = useState(null);
   const [hotZones, setHotZones] = useState([]);
-  const [nearbyParkingZones, setNearbyParkingZones] = useState([]);
-  const [hasDemoData, setHasDemoData] = useState(false);
-  const [serverConnected, setServerConnected] = useState(false);
-  const locationWatchRef = useRef(null);
-  const trajectoryIntervalRef = useRef(null);
+  const [bestParking, setBestParking] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [dbInitialized, setDbInitialized] = useState(false);
+  const mapRef = useRef(null);
 
   useEffect(() => {
-    loadUser();
-    testServerConnection();
-    requestLocationPermission();
-    
-    // Cleanup on unmount
-    return () => {
-      if (locationWatchRef.current) {
-        locationWatchRef.current.remove();
-      }
-      if (trajectoryIntervalRef.current) {
-        clearInterval(trajectoryIntervalRef.current);
-      }
-    };
+    initializeApp();
   }, []);
 
-  const testServerConnection = async () => {
-    const connected = await ApiService.testConnection();
-    setServerConnected(connected);
-    if (!connected) {
-      Alert.alert(
-        'Servidor No Disponible',
-        'No se pudo conectar al servidor. Asegúrate de que el servidor esté ejecutándose en tu computadora.',
-        [{ text: 'OK' }]
-      );
-    }
+  const initializeApp = async () => {
+    await loadUser();
+    await initializeDatabase();
+    await requestLocationPermission();
   };
 
   const loadUser = async () => {
     const result = await AuthService.checkSession();
-    if (result.success) {
-      setUser(result.user);
+    if (result.success) setUser(result.user);
+  };
+
+  const initializeDatabase = async () => {
+    try {
+      await DatabaseService.init();
+      await ParkingMLModel.initialize();
+      setDbInitialized(true);
+      console.log('Database initialized successfully');
+    } catch (error) {
+      console.error('Error initializing database:', error);
+      Alert.alert('Error', 'No se pudo inicializar la base de datos');
     }
   };
 
@@ -69,21 +59,20 @@ export default function MainScreen({ navigation }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permiso Denegado',
-          'Se necesita acceso a la ubicación para encontrar estacionamiento'
-        );
+        Alert.alert('Permiso Denegado', 'Se necesita acceso a la ubicación para encontrar estacionamiento');
+        setLoading(false);
         return;
       }
       await getCurrentLocation();
     } catch (error) {
       console.error('Error requesting location permission:', error);
+      setLoading(false);
     }
   };
 
+
   const getCurrentLocation = async () => {
     try {
-      setLoading(true);
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -96,16 +85,12 @@ export default function MainScreen({ navigation }) {
       setLocation(userLocation);
       setMapRegion({
         ...userLocation,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
+        latitudeDelta: 0.008,
+        longitudeDelta: 0.008,
       });
 
-      // Load hot zones for this area
+      // Load hot zones
       await loadHotZones(userLocation.latitude, userLocation.longitude);
-
-      // Start tracking user trajectory
-      startTrajectoryTracking();
-
       setLoading(false);
     } catch (error) {
       setLoading(false);
@@ -115,95 +100,14 @@ export default function MainScreen({ navigation }) {
   };
 
   const loadHotZones = async (lat, lon) => {
-    if (!serverConnected) {
-      console.log('Server not connected, skipping hot zones');
-      return;
-    }
-
+    if (!dbInitialized) return;
     try {
-      const zones = await ApiService.getHotZones(lat, lon, 2);
+      const zones = await ParkingService.getHotZones(lat, lon, 2);
       setHotZones(zones);
-      setHasDemoData(zones.length > 0);
-      
-      // Also get nearby parking zones for markers
-      const nearbyZones = zones
-        .filter(zone => zone.successRate > 0.5)
-        .slice(0, 10)
-        .map((zone, index) => ({
-          id: `zone_${index}`,
-          ...zone,
-          name: `Zona ${index + 1}`,
-          probability: Math.round(zone.successRate * 100)
-        }));
-      
-      setNearbyParkingZones(nearbyZones);
+      console.log(`Loaded ${zones.length} hot zones`);
     } catch (error) {
       console.error('Error loading hot zones:', error);
     }
-  };
-
-  const handleSeedDemoData = async () => {
-    if (!location) {
-      Alert.alert('Error', 'Esperando ubicación...');
-      return;
-    }
-
-    if (!serverConnected) {
-      Alert.alert('Error', 'El servidor no está disponible');
-      return;
-    }
-
-    Alert.alert(
-      'Cargar Datos Demo',
-      '¿Deseas cargar datos de ejemplo en el servidor para visualizar zonas calientes? Esto creará eventos de estacionamiento simulados.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cargar',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await ApiService.seedDemoData(location.latitude, location.longitude, user?.username || 'demo');
-              await loadHotZones(location.latitude, location.longitude);
-              Alert.alert('Éxito', 'Datos de demostración cargados en el servidor. ¡Ahora puedes ver las zonas calientes en el mapa!');
-            } catch (error) {
-              Alert.alert('Error', 'No se pudieron cargar los datos demo');
-              console.error('Error seeding demo data:', error);
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const startTrajectoryTracking = () => {
-    if (!serverConnected) {
-      console.log('Server not connected, skipping trajectory tracking');
-      return;
-    }
-
-    // Record trajectory every 30 seconds
-    trajectoryIntervalRef.current = setInterval(async () => {
-      if (location && user) {
-        try {
-          const currentPos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          
-          await ApiService.recordTrajectory(user.username, {
-            latitude: currentPos.coords.latitude,
-            longitude: currentPos.coords.longitude,
-            speed: currentPos.coords.speed,
-            heading: currentPos.coords.heading,
-            accuracy: currentPos.coords.accuracy
-          });
-        } catch (error) {
-          console.error('Error recording trajectory:', error);
-        }
-      }
-    }, 30000); // 30 seconds
   };
 
   const handleFindParking = async () => {
@@ -211,80 +115,77 @@ export default function MainScreen({ navigation }) {
       Alert.alert('Error', 'Obteniendo ubicación...');
       return;
     }
-
-    if (!serverConnected) {
-      Alert.alert('Error', 'El servidor no está disponible');
+    if (!dbInitialized) {
+      Alert.alert('Error', 'Base de datos no inicializada');
       return;
     }
 
     setSearching(true);
-    const searchStartTime = Date.now();
-
     try {
-      const result = await ApiService.findParking(location.latitude, location.longitude, 1000);
-      const parking = result.bestOption;
-      
+      const parking = await ParkingService.getBestParkingOption(location);
       if (parking) {
         setBestParking(parking);
-        
-        // Center map on parking location
-        setMapRegion({
-          latitude: parking.latitude,
-          longitude: parking.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        });
-
         Alert.alert(
-          '¡Estacionamiento Encontrado!',
-          `${parking.name}\n` +
-          `Distancia: ${parking.distance}m\n` +
-          `Tipo: ${parking.type}\n` +
-          `Probabilidad: ${parking.probability}%`,
+          'Estacionamiento Encontrado',
+          `${parking.name}\nProbabilidad: ${parking.probability}%\nDistancia: ${parking.distance}m`,
           [
-            { 
-              text: 'No encontré lugar', 
-              style: 'cancel',
+            {
+              text: 'OK',
               onPress: () => {
-                const searchDuration = Math.floor((Date.now() - searchStartTime) / 1000);
-                ApiService.recordParkingEvent(
-                  user?.username || 'guest',
-                  { latitude: parking.latitude, longitude: parking.longitude },
-                  false,
-                  searchDuration
-                );
-              }
-            },
-            { 
-              text: 'Estacioné aquí',
-              onPress: () => {
-                const searchDuration = Math.floor((Date.now() - searchStartTime) / 1000);
-                ApiService.recordParkingEvent(
-                  user?.username || 'guest',
-                  { latitude: parking.latitude, longitude: parking.longitude },
-                  true,
-                  searchDuration
-                );
-                Alert.alert('¡Genial!', 'Tu experiencia ayudará a mejorar las predicciones');
+                // Record this as a successful search
+                if (user) {
+                  ParkingService.recordParkingAttempt(user.username, location, true, 0);
+                }
               }
             }
           ]
         );
       } else {
-        Alert.alert('Lo sentimos', 'No se encontraron estacionamientos cercanos. Intenta cargar datos demo primero.');
+        Alert.alert('Sin Resultados', 'No se encontraron zonas de estacionamiento cercanas');
       }
     } catch (error) {
       console.error('Error finding parking:', error);
-      Alert.alert('Error', 'Hubo un problema al buscar estacionamiento');
-    } finally {
-      setSearching(false);
+      Alert.alert('Error', 'No se pudo buscar estacionamiento');
     }
+    setSearching(false);
+  };
+
+  const handleLoadDemoData = async () => {
+    if (!location) {
+      Alert.alert('Error', 'Esperando ubicación...');
+      return;
+    }
+    
+    Alert.alert(
+      'Cargar Datos de Demostración',
+      '¿Deseas cargar datos de demostración? Esto creará zonas de estacionamiento alrededor de tu ubicación actual.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cargar',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await seedDemoData(location.latitude, location.longitude, user?.username || 'demo');
+              await ParkingMLModel.updateModel();
+              await loadHotZones(location.latitude, location.longitude);
+              setLoading(false);
+              Alert.alert('Éxito', 'Datos de demostración cargados correctamente');
+            } catch (error) {
+              setLoading(false);
+              console.error('Error loading demo data:', error);
+              Alert.alert('Error', 'No se pudieron cargar los datos de demostración');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleLogout = async () => {
     Alert.alert(
       'Cerrar Sesión',
-      '¿Estás seguro que deseas cerrar sesión?',
+      '¿Estás seguro?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -293,126 +194,109 @@ export default function MainScreen({ navigation }) {
           onPress: async () => {
             await AuthService.logout();
             navigation.replace('Login');
-          }
-        }
+          },
+        },
       ]
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcomeText}>Bienvenido</Text>
-          <Text style={styles.userText}>{user?.username || 'Usuario'}</Text>
-          <View style={styles.serverStatus}>
-            <View style={[styles.statusDot, serverConnected ? styles.statusConnected : styles.statusDisconnected]} />
-            <Text style={styles.statusText}>
-              {serverConnected ? 'Servidor conectado' : 'Servidor desconectado'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.headerButtons}>
-          {!hasDemoData && !loading && serverConnected && (
-            <TouchableOpacity style={styles.demoButton} onPress={handleSeedDemoData}>
-              <Text style={styles.demoButtonText}>Demo</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Salir</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const getProbabilityColor = (probability) => {
+    if (probability > 0.65) return 'rgba(76, 175, 80,'; // green
+    if (probability > 0.35) return 'rgba(255, 193, 7,'; // yellow
+    return 'rgba(244, 67, 54,';                          // red
+  };
 
-      <View style={styles.mapContainer}>
-        {loading || !mapRegion ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4A90E2" />
-            <Text style={styles.loadingText}>Obteniendo ubicación...</Text>
-          </View>
-        ) : (
-          <MapView
-            style={styles.map}
-            region={mapRegion}
-            showsUserLocation={true}
-            showsMyLocationButton={true}
-          >
-            {location && (
+  return (
+    <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+
+      {/* Full-screen map */}
+      {mapRegion ? (
+        <MapView
+          ref={mapRef}
+          style={StyleSheet.absoluteFillObject}
+          region={mapRegion}
+          showsUserLocation
+          showsMyLocationButton={false}
+          showsCompass={false}
+        >
+          {/* Hot zones */}
+          {hotZones.map((zone, index) => {
+            const colorBase = getProbabilityColor(zone.probability);
+            return (
               <Circle
-                center={location}
-                radius={500}
-                fillColor="rgba(74, 144, 226, 0.1)"
-                strokeColor="rgba(74, 144, 226, 0.3)"
+                key={`zone_${index}`}
+                center={{ latitude: zone.latitude, longitude: zone.longitude }}
+                radius={zone.radius || 100}
+                fillColor={`${colorBase} 0.25)`}
+                strokeColor={`${colorBase} 0.5)`}
                 strokeWidth={2}
               />
-            )}
-            
-            {/* Hot zones visualization */}
-            {hotZones.map((zone, index) => {
-              // Color based on success rate (green = good, yellow = medium, red = poor)
-              let color = 'rgba(255, 193, 7, 0.3)'; // yellow
-              if (zone.successRate > 0.7) {
-                color = 'rgba(76, 175, 80, 0.4)'; // green
-              } else if (zone.successRate < 0.4) {
-                color = 'rgba(244, 67, 54, 0.3)'; // red
-              }
+            );
+          })}
 
-              return (
-                <Circle
-                  key={`hotzone_${index}`}
-                  center={{
-                    latitude: zone.latitude,
-                    longitude: zone.longitude
-                  }}
-                  radius={zone.radius}
-                  fillColor={color}
-                  strokeColor={color.replace('0.3', '0.6').replace('0.4', '0.7')}
-                  strokeWidth={1}
-                />
-              );
-            })}
-
-            {/* Nearby parking zone markers */}
-            {nearbyParkingZones.map((zone) => (
-              <Marker
-                key={zone.id}
-                coordinate={{
-                  latitude: zone.latitude,
-                  longitude: zone.longitude,
-                }}
-                title={zone.name}
-                description={`Probabilidad: ${zone.probability}%`}
-                pinColor={zone.successRate > 0.7 ? '#4CAF50' : '#FFC107'}
-              />
-            ))}
-            
-            {bestParking && (
-              <Marker
-                coordinate={{
-                  latitude: bestParking.latitude,
-                  longitude: bestParking.longitude,
-                }}
-                title={bestParking.name}
-                description={`Probabilidad: ${bestParking.probability}%`}
-                pinColor="#4A90E2"
-              />
-            )}
-          </MapView>
-        )}
-      </View>
-
-      {bestParking && (
-        <View style={styles.probabilityCard}>
-          <Text style={styles.probabilityLabel}>Probabilidad de Estacionamiento</Text>
-          <Text style={styles.probabilityValue}>{bestParking.probability}%</Text>
-          <Text style={styles.parkingName}>{bestParking.name}</Text>
-          <Text style={styles.parkingDistance}>{bestParking.distance}m de distancia</Text>
+          {/* Best parking marker */}
+          {bestParking && (
+            <Marker
+              coordinate={{
+                latitude: bestParking.latitude,
+                longitude: bestParking.longitude
+              }}
+              title={bestParking.name}
+              description={`Probabilidad: ${bestParking.probability}%`}
+              pinColor="blue"
+            />
+          )}
+        </MapView>
+      ) : (
+        <View style={styles.loadingMap}>
+          <ActivityIndicator size="large" color="#4A90E2" />
+          <Text style={styles.loadingText}>Obteniendo ubicación...</Text>
         </View>
       )}
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={[styles.aparcarButton, searching && styles.aparcarButtonDisabled]}
+      {/* Top overlay: user info + demo button */}
+      <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
+        <View style={styles.topCard}>
+          <View style={styles.topCardLeft}>
+            <Text style={styles.appName}>BuscaParca</Text>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, dbInitialized ? styles.dotGreen : styles.dotRed]} />
+              <Text style={styles.statusText}>
+                {dbInitialized ? 'Listo' : 'Inicializando...'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.topButtons}>
+            <TouchableOpacity style={styles.demoButton} onPress={handleLoadDemoData}>
+              <Text style={styles.demoButtonText}>Demo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <Text style={styles.logoutText}>Salir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Legend */}
+        {hotZones.length > 0 && (
+          <View style={styles.legendCard}>
+            <Text style={styles.legendTitle}>Probabilidad de encontrar lugar</Text>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: '#4CAF50' }]} />
+              <Text style={styles.legendLabel}>Alta (&gt;65%)</Text>
+              <View style={[styles.legendDot, { backgroundColor: '#FFC107' }]} />
+              <Text style={styles.legendLabel}>Media</Text>
+              <View style={[styles.legendDot, { backgroundColor: '#F44336' }]} />
+              <Text style={styles.legendLabel}>Baja (&lt;35%)</Text>
+            </View>
+          </View>
+        )}
+      </SafeAreaView>
+
+      {/* Bottom overlay: APARCAR button */}
+      <SafeAreaView style={styles.bottomOverlay} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[styles.aparcarButton, (searching || loading) && styles.aparcarButtonDisabled]}
           onPress={handleFindParking}
           disabled={searching || loading}
         >
@@ -422,33 +306,60 @@ export default function MainScreen({ navigation }) {
             <Text style={styles.aparcarText}>APARCAR</Text>
           )}
         </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#e8e8e8',
   },
-  header: {
+  loadingMap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#e8e8e8',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#555',
+  },
+  topOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  topCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 15,
+    marginHorizontal: 12,
+    marginTop: 50,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
-  headerButtons: {
+  topCardLeft: {
+    flex: 1,
+  },
+  topButtons: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   demoButton: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 5,
+    borderRadius: 8,
     backgroundColor: '#4CAF50',
   },
   demoButtonText: {
@@ -456,40 +367,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  welcomeText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  userText: {
-    fontSize: 18,
+  appName: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#4A90E2',
   },
-  serverStatus: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 5,
+    marginTop: 3,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 5,
+    marginRight: 6,
   },
-  statusConnected: {
-    backgroundColor: '#4CAF50',
-  },
-  statusDisconnected: {
-    backgroundColor: '#f44336',
-  },
+  dotGreen: { backgroundColor: '#4CAF50' },
+  dotRed: { backgroundColor: '#F44336' },
   statusText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#666',
   },
   logoutButton: {
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 5,
+    borderRadius: 8,
     backgroundColor: '#f0f0f0',
   },
   logoutText: {
@@ -497,81 +400,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  mapContainer: {
-    flex: 1,
-    backgroundColor: '#e0e0e0',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
+  legendCard: {
+    marginHorizontal: 12,
     marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  probabilityCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    margin: 15,
-    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.93)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
     shadowRadius: 4,
-    elevation: 3,
-    alignItems: 'center',
+    elevation: 4,
   },
-  probabilityLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
-  },
-  probabilityValue: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#4A90E2',
-    marginBottom: 10,
-  },
-  parkingName: {
-    fontSize: 18,
+  legendTitle: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 5,
+    marginBottom: 6,
   },
-  parkingDistance: {
-    fontSize: 14,
-    color: '#666',
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  buttonContainer: {
-    padding: 20,
-    paddingBottom: 30,
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendLabel: {
+    fontSize: 11,
+    color: '#555',
+    marginRight: 8,
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
   aparcarButton: {
+    marginHorizontal: 20,
+    marginBottom: 30,
     backgroundColor: '#4A90E2',
-    paddingVertical: 25,
-    borderRadius: 15,
+    paddingVertical: 22,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-    minHeight: 80,
+    shadowRadius: 6,
+    elevation: 10,
+    minHeight: 72,
   },
   aparcarButtonDisabled: {
     backgroundColor: '#A0C4E8',
   },
   aparcarText: {
     color: '#fff',
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
-    letterSpacing: 2,
+    letterSpacing: 3,
   },
 });
