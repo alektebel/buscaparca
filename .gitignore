@@ -1,59 +1,16 @@
-# Dependencies
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# node
 node_modules/
-
-# Expo
 .expo/
-.expo-shared/
 dist/
-web-build/
-
-# Native
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# Debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-
-# Temporary files created by Metro to check the health of the file watcher
-.metro-health-check*
-
-# Environment
+# data & secrets
+data/cache/
+data/raw/
 .env
-.env.local
-.env.*.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Logs
-logs
-*.log
-
-# Build
-*.apk
-*.ipa
-*.aab
-android/app/build/
-ios/build/
-
-# Test coverage
-coverage/
-*.apk
 *.db
-server.log

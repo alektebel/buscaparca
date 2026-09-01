@@ -1,0 +1,28 @@
+{
+  "@context": {"c": "http://datos.madrid.es/egob/kos/"},
+  "@graph": [
+    {
+      "@id": "https://datos.madrid.es/egob/catalogo/tipo/entidadesyorganismos/1234-parking.json",
+      "id": "1234",
+      "title": "Aparcamiento Plaza del Rey",
+      "address": {"street-address": "Plaza del Rey 1", "district": {"@id": "Centro"}},
+      "location": {"latitude": 40.4197, "longitude": -3.6968},
+      "organization": {"organization-desc": "Rotacional", "accesibility": 1},
+      "plazasTotales": "320",
+      "libres": "47",
+      "tarifa": "3,30"
+    },
+    {
+      "id": "5678",
+      "title": "Aparcamiento Mercado de Barcelo",
+      "location": {"latitude": 40.4276, "longitude": -3.7003},
+      "plazasTotales": 280,
+      "libres": 0
+    },
+    {
+      "id": "9999",
+      "title": "Aparcamiento sin coordenadas",
+      "plazasTotales": 100
+    }
+  ]
+}

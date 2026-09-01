@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<pms fecha_hora="01/09/2026 10:05:00">
+  <pm>
+    <idelem>1001</idelem>
+    <descripcion>Gran Via E-O - Montera</descripcion>
+    <accesoAsociado>0</accesoAsociado>
+    <intensidad>1240</intensidad>
+    <ocupacion>62</ocupacion>
+    <carga>88</carga>
+    <nivelServicio>2</nivelServicio>
+    <st_x>440123.5</st_x>
+    <st_y>4474512.0</st_y>
+    <error>N</error>
+  </pm>
+  <pm>
+    <idelem>1002</idelem>
+    <descripcion>Alcala O-E - Cibeles</descripcion>
+    <intensidad>310</intensidad>
+    <ocupacion>9</ocupacion>
+    <st_x>441000.0</st_x>
+    <st_y>4474000.0</st_y>
+  </pm>
+  <pm>
+    <idelem>1003</idelem>
+    <descripcion>Espira averiada</descripcion>
+    <error>S</error>
+  </pm>
+</pms>
