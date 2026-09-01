@@ -1,0 +1,38 @@
+# Stack minimo: la API y un ingestor que refresca lo que caduca cada cinco minutos.
+#
+# El almacenamiento es SQLite sobre un volumen compartido. Aguanta de sobra una ciudad (Madrid son
+# ~10^5 tramos) con un unico proceso escribiendo. Cuando haya varios ingestores concurrentes o mas
+# de una ciudad, el salto natural es PostgreSQL con PostGIS: solo cambia `app/store/`.
+
+services:
+  api:
+    build:
+      context: ../backend
+    environment:
+      BUSCAPARCA_SQLITE_PATH: /data/buscaparca.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - buscaparca-data:/data
+    restart: unless-stopped
+
+  ingest:
+    build:
+      context: ../backend
+    environment:
+      BUSCAPARCA_SQLITE_PATH: /data/buscaparca.db
+    volumes:
+      - buscaparca-data:/data
+    # El callejero se ingiere a mano una vez (`make ingest`); esto solo refresca lo que caduca.
+    command: >
+      sh -c 'while true; do
+        python -m app.ingest.run parkings || true;
+        python -m app.ingest.run trafico  || true;
+        sleep 300;
+      done'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  buscaparca-data:

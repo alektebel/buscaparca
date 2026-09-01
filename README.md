@@ -23,13 +23,31 @@ buscaparca/
 ## Arranque rápido
 
 ```bash
-make dev          # API en http://localhost:8000 con datos de demo (sin Postgres)
-make test         # pytest + jest
-make up           # stack completo con PostGIS
-make ingest       # descarga datos abiertos de Madrid a la BD
+make dev          # API en http://localhost:8000 con datos de demo, sin base de datos
+make test         # pytest (backend) + jest (móvil)
+make lint         # ruff + tsc
+make up           # API + ingestor en Docker
+make ingest       # descarga los datos abiertos de Madrid
+make mobile       # arranca Expo
 ```
 
-Sin `DATABASE_URL` la API arranca con un *store* en memoria sembrado con tramos reales del centro de
-Madrid: sirve para desarrollar el móvil y para las pruebas de humo. Con `DATABASE_URL` usa PostGIS.
+Sin `BUSCAPARCA_SQLITE_PATH` la API arranca con un *store* en memoria sembrado con calles reales del
+centro de Madrid: sirve para desarrollar el móvil y para las pruebas de humo. Con la variable puesta
+usa el SQLite que llena la ingesta.
 
-Documentación: [`docs/MODELO.md`](docs/MODELO.md) · [`docs/DATOS.md`](docs/DATOS.md) · [`docs/PRIVACIDAD.md`](docs/PRIVACIDAD.md)
+Una respuesta de `/v1/plan` no es un mapa de calor: es una decisión.
+
+```
+POST /v1/plan  {"lat": 40.4245, "lon": -3.6975, "hurry": 0.5, "stay_hours": 2}
+
+  "acepta cualquier hueco a menos de 240 m"
+  tardarás 7 min · pagarás 4,80 € · 92 % de acabar en la calle
+  si a la altura de Calle de Belén sigues sin nada, tira para el Parking de Barceló
+```
+
+## Documentación
+
+- [`docs/MODELO.md`](docs/MODELO.md) — las tres capas y la parada óptima
+- [`docs/DATOS.md`](docs/DATOS.md) — fuentes, ingesta y el aviso sobre los conectores
+- [`docs/PRIVACIDAD.md`](docs/PRIVACIDAD.md) — qué sale del teléfono y qué no
+- [`docs/DECISIONES.md`](docs/DECISIONES.md) — por qué esto es así

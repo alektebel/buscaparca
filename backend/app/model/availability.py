@@ -35,8 +35,8 @@ LAMBDA_PRIOR_STRENGTH_MIN = 240.0
 @dataclass(frozen=True)
 class Availability:
     segment_id: str
-    p_free: float  # probabilidad de encontrar hueco al recorrer el tramo
-    free_fraction: float  # fraccion de plazas libres esperada
+    p_free: float  # probabilidad de encontrar hueco al recorrer el tramo (prior + evidencia)
+    free_fraction: float  # fraccion de plazas libres esperada (estimacion estructural)
     vacancy_rate_per_min: float  # huecos liberados por minuto
     confidence: float  # 0..1, de la varianza del posterior
     capacity: int
@@ -101,31 +101,45 @@ class AvailabilityModel:
         stats: SegmentStats | None = None,
         traversal_min: float | None = None,
     ) -> Availability:
-        stats = stats or SegmentStats()
-        prior_f = self.prior.free_fraction(segment, ctx)
+        """Estima la probabilidad de encontrar hueco al recorrer el tramo.
 
-        beta = BetaPosterior.from_prior(
-            prior_mean=prior_f,
-            concentration=self.settings.prior_concentration,
-            successes=stats.found,
-            failures=stats.missed,
-        )
+        El orden importa y es el unico correcto. Lo que observan los moviles es *"pase por esta
+        calle y encontre / no encontre"*, que es un suceso a nivel de tramo, no una plaza sorteada
+        al azar. Asi que la parte estructural (fraccion libre, rotacion, competencia) construye el
+        **prior de esa probabilidad observable**, y la Beta actualiza sobre ella directamente.
+
+        Poner la Beta sobre la fraccion libre seria un error: un solo `park` en una calle de treinta
+        plazas la subiria del 0,4% al 11%, y con esa fraccion la probabilidad de encontrar hueco se
+        dispara al 97%. Una observacion no puede valer eso.
+        """
+        stats = stats or SegmentStats()
+        tau = traversal_min if traversal_min is not None else self.traversal_minutes(segment)
+
+        # 1. Parte estructural: cuantas plazas libres cabe esperar y cuantas se liberan para ti.
+        free_fraction = self.prior.free_fraction(segment, ctx)
         gamma = GammaPosterior.from_prior(
             prior_rate=prior_vacancy_rate(
-                segment, beta.mean, activity_factor(ctx.traffic_pressure)
+                segment, free_fraction, activity_factor(ctx.traffic_pressure)
             ),
             strength_min=LAMBDA_PRIOR_STRENGTH_MIN,
             events=stats.unparks,
             exposure_min=stats.exposure_min,
         )
-
-        tau = traversal_min if traversal_min is not None else self.traversal_minutes(segment)
-        # `gamma.mean` son los huecos que se liberan en el tramo; solo una parte te tocan a ti.
         mine = gamma.mean * capture_share(ctx.traffic_pressure)
+
+        # 2. De ahi sale el prior de lo observable, y la evidencia lo corrige.
+        prior_p = probability_of_finding(free_fraction, segment.capacity, mine, tau)
+        beta = BetaPosterior.from_prior(
+            prior_mean=prior_p,
+            concentration=self.settings.prior_concentration,
+            successes=stats.found,
+            failures=stats.missed,
+        )
+
         return Availability(
             segment_id=segment.id,
-            p_free=probability_of_finding(beta.mean, segment.capacity, mine, tau),
-            free_fraction=beta.mean,
+            p_free=beta.mean if segment.capacity > 0 else 0.0,
+            free_fraction=free_fraction,
             vacancy_rate_per_min=mine,
             confidence=beta.confidence,
             capacity=segment.capacity,

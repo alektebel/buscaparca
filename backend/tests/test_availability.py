@@ -68,12 +68,32 @@ def test_evidence_overrides_the_prior(settings, evening):
     segment = make_segment(capacity=25)
 
     blind = model.estimate(segment, evening)
-    # Una calle que, contra todo pronostico, siempre tiene sitio a esa hora.
+    # Una calle que, contra todo pronostico, casi siempre tiene sitio a esa hora.
     observed = model.estimate(segment, evening, SegmentStats(found=200.0, missed=10.0))
 
-    assert observed.free_fraction > blind.free_fraction
-    assert observed.confidence < 1.0
+    assert observed.p_free > 0.8
     assert observed.p_free > blind.p_free
+    assert observed.confidence > blind.confidence
+    # La fraccion libre es la estimacion estructural y no la tocan las observaciones de tramo:
+    # lo que se actualiza es la probabilidad observable.
+    assert observed.free_fraction == blind.free_fraction
+
+
+def test_one_observation_does_not_flip_the_estimate(settings, evening):
+    """Un solo `park` no puede convertir una calle imposible en una calle facil.
+
+    Es el fallo que tenia el modelo cuando la Beta estaba puesta sobre la fraccion de plazas: un
+    unico evento la subia del 0,4% al 11%, y con esa fraccion una calle de treinta plazas daba un
+    97% de encontrar hueco. Lo que observa un movil es un suceso de tramo, no una plaza sorteada.
+    """
+    model = AvailabilityModel(PriorModel.cold_start(), settings)
+    segment = make_segment(capacity=30)
+
+    blind = model.estimate(segment, evening)
+    once = model.estimate(segment, evening, SegmentStats(found=1.0))
+
+    assert once.p_free > blind.p_free
+    assert once.p_free < blind.p_free + 0.12
 
 
 def test_night_is_easier_than_the_evening(settings, evening, night):

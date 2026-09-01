@@ -30,7 +30,9 @@ class Settings(BaseSettings):
 
     # Modelo.
     posterior_halflife_days: float = 21.0
-    prior_concentration: float = 8.0  # kappa: cuanta evidencia hace falta para desmentir al prior
+    # kappa: cuantas observaciones equivalentes vale el prior. Con 12, una sola pasada por una
+    # calle mueve la estimacion de forma perceptible pero no la vuelca.
+    prior_concentration: float = 12.0
 
     # Planificador.
     cruise_speed_kmh: float = 14.0  # velocidad real buscando sitio en ciudad

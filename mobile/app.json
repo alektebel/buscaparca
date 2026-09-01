@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "BuscaParca",
+    "slug": "buscaparca",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "buscaparca",
+    "android": {
+      "package": "com.buscaparca.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "BuscaParca necesita tu ubicacion en segundo plano para detectar sola cuando aparcas y cuando te vas, y asi saber donde hay huecos. No se guarda tu recorrido.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://10.0.2.2:8000"
+    }
+  }
+}
